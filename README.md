@@ -344,6 +344,7 @@ If this repo gets taken down, the code lives on.
 ## Contributing
 
 Contributions are welcome. If you're working on restoring one of the 34 broken feature flags, check the reconstruction notes in [FEATURES.md](FEATURES.md) first -- many are close to compiling and just need a small wrapper or missing asset.
+For the recommended contribution branch flow, see [docs/branching-workflow.md](docs/branching-workflow.md).
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)
