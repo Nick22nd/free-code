@@ -95,7 +95,7 @@
         <div class="event-list" id="events"></div>
       </aside>
       <article class="panel">
-        <div class="panel-head"><h2>当前上下文状态</h2><span class="sub">每 800ms 自动刷新</span></div>
+        <div class="panel-head"><h2>当前上下文状态</h2><span class="sub">每 800ms 检查更新</span></div>
         <div class="detail" id="detail"><div class="empty">启动带 Inspector 环境变量的 CLI 后，这里会出现快照。</div></div>
       </article>
     </section>
@@ -110,7 +110,7 @@
       ['api_request_ready', 'Final API Context', '#67a7ff'],
     ];
     const stageMap = Object.fromEntries(STAGES.map(([id, label, color]) => [id, { label, color }]));
-    const state = { events: [], runId: '', selectedId: '', loading: false };
+    const state = { events: [], runId: '', selectedId: '', loading: false, signature: '' };
     const $ = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const fmt = value => {
@@ -163,6 +163,7 @@
 
     function renderEvents() {
       const events = selectedRunEvents();
+      const scrollTop = $('events').scrollTop;
       $('eventCount').textContent = `${events.length} events`;
       if (!events.length) {
         $('events').innerHTML = '<div class="empty">当前 run 暂无事件</div>';
@@ -181,6 +182,7 @@
         renderEvents();
         renderDetail();
       }));
+      $('events').scrollTop = scrollTop;
     }
 
     function metrics(event) {
@@ -230,7 +232,11 @@
       return `<details open><summary>Prefetch 输入</summary><pre>${esc(JSON.stringify(d, null, 2))}</pre></details>`;
     }
 
-    function renderDetail() {
+    function renderDetail(preserveView = false) {
+      const previousView = preserveView ? {
+        scrollTop: $('detail').scrollTop,
+        open: [...$('detail').querySelectorAll('details')].map(details => details.open),
+      } : null;
       const events = selectedRunEvents();
       const event = events.find(item => item.id === state.selectedId) ?? events.at(-1);
       if (!event) { $('detail').innerHTML = '<div class="empty">尚未收到快照</div>'; return; }
@@ -241,23 +247,38 @@
         <div class="metric-grid">${metrics(event).map(([label, value]) => `<div class="metric"><b>${esc(fmt(value))}</b><span>${esc(label)}</span></div>`).join('')}</div>
         ${stageDetails(event)}
         <details><summary>完整事件 JSON</summary><pre>${esc(JSON.stringify(event, null, 2))}</pre></details>`;
+      if (previousView) {
+        [...$('detail').querySelectorAll('details')].forEach((details, index) => {
+          if (index < previousView.open.length) details.open = previousView.open[index];
+        });
+        $('detail').scrollTop = previousView.scrollTop;
+      }
     }
 
-    async function load() {
+    async function load(force = false) {
       if (state.loading) return;
       state.loading = true;
       try {
         const response = await fetch('/api/events', { cache: 'no-store' });
         const payload = await response.json();
-        const oldCount = state.events.length;
-        state.events = payload.events || [];
+        const nextEvents = payload.events || [];
+        const nextSignature = nextEvents.map(event => `${event.id}:${event.sequence}`).join('|');
         $('dataDir').textContent = payload.dataDir;
         $('status').classList.add('live');
         $('status').querySelector('span:last-child').textContent = 'live';
+        if (!force && nextSignature === state.signature) return;
+
+        const oldCount = state.events.length;
+        const previousSelectedId = state.selectedId;
+        state.events = nextEvents;
+        state.signature = nextSignature;
         renderRuns();
         const current = selectedRunEvents();
         if ($('follow').checked && (state.events.length !== oldCount || !state.selectedId)) state.selectedId = current.at(-1)?.id ?? '';
-        renderPipeline(); renderEvents(); renderDetail();
+        renderPipeline();
+        renderEvents();
+        if (state.selectedId !== previousSelectedId) renderDetail();
+        else renderDetail(true);
       } catch (error) {
         $('status').classList.remove('live');
         $('status').querySelector('span:last-child').textContent = 'offline';
@@ -265,7 +286,7 @@
     }
 
     $('runSelect').addEventListener('change', event => { state.runId = event.target.value; state.selectedId = ''; renderPipeline(); renderEvents(); renderDetail(); });
-    $('refresh').addEventListener('click', load);
+    $('refresh').addEventListener('click', () => load(true));
     setInterval(load, 800);
     load();
   </script>
