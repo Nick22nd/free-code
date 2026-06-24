@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Code Agent 如何记住一件事？</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: #0c1b2e;
+      --panel-2: #10243a;
+      --ink: #edf7ff;
+      --muted: #9db3c8;
+      --cyan: #55d7ff;
+      --green: #77e8b2;
+      --amber: #ffc766;
+      --rose: #ff829f;
+      --line: rgba(157, 179, 200, 0.23);
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 88% 12%, rgba(85, 215, 255, 0.12), transparent 28%),
+        radial-gradient(circle at 12% 88%, rgba(119, 232, 178, 0.09), transparent 32%),
+        var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .deck {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      padding: clamp(42px, 6vh, 76px) clamp(54px, 7vw, 112px);
+      opacity: 0;
+      transform: translateX(24px);
+    }
+
+    .slide.active {
+      display: flex;
+      animation: enter 260ms ease-out forwards;
+    }
+
+    @keyframes enter {
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: clamp(13px, 1.3vw, 19px);
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      margin-bottom: 24px;
+      font-size: clamp(48px, 6.5vw, 92px);
+      line-height: 1.04;
+      letter-spacing: -0.045em;
+      max-width: 1100px;
+    }
+    h2 {
+      margin-bottom: 34px;
+      font-size: clamp(36px, 4.6vw, 66px);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+    h3 {
+      margin-bottom: 12px;
+      font-size: clamp(22px, 2.2vw, 32px);
+      line-height: 1.2;
+    }
+    p, li {
+      font-size: clamp(20px, 2.05vw, 30px);
+      line-height: 1.48;
+    }
+    ul, ol { margin: 0; padding-left: 1.25em; }
+    li + li { margin-top: 12px; }
+    strong { color: #fff; }
+    code { font-family: "Cascadia Code", Consolas, monospace; }
+
+    .subtitle {
+      max-width: 900px;
+      color: var(--muted);
+      font-size: clamp(22px, 2.4vw, 34px);
+    }
+
+    .meta {
+      margin-top: 44px;
+      color: var(--muted);
+      font-size: clamp(15px, 1.5vw, 21px);
+    }
+
+    .speaker-notes { display: none; }
+
+    .accent { color: var(--cyan); }
+    .green { color: var(--green); }
+    .amber { color: var(--amber); }
+    .rose { color: var(--rose); }
+    .muted { color: var(--muted); }
+
+    .big-quote {
+      max-width: 1140px;
+      padding-left: 32px;
+      border-left: 7px solid var(--amber);
+      font-size: clamp(31px, 4vw, 58px);
+      line-height: 1.28;
+      font-weight: 720;
+    }
+
+    .lead {
+      max-width: 1100px;
+      font-size: clamp(28px, 3.3vw, 48px);
+      line-height: 1.32;
+      font-weight: 650;
+    }
+
+    .grid-2, .grid-3, .grid-4 {
+      display: grid;
+      gap: clamp(18px, 2.2vw, 34px);
+      width: 100%;
+    }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .card {
+      min-height: 160px;
+      padding: clamp(20px, 2.4vw, 34px);
+      background: linear-gradient(145deg, rgba(16, 36, 58, 0.93), rgba(9, 25, 43, 0.9));
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+    }
+    .card p, .card li {
+      color: var(--muted);
+      font-size: clamp(16px, 1.55vw, 23px);
+    }
+    .card p:last-child { margin-bottom: 0; }
+    .card .number {
+      display: block;
+      color: var(--cyan);
+      font-size: clamp(33px, 4vw, 56px);
+      font-weight: 850;
+      margin-bottom: 12px;
+    }
+
+    .flow {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 18px;
+      width: 100%;
+      margin-top: 20px;
+    }
+    .flow .node {
+      flex: 1;
+      min-width: 0;
+      padding: 24px 20px;
+      border: 1px solid var(--line);
+      background: rgba(12, 27, 46, 0.88);
+      border-radius: 18px;
+      text-align: center;
+      font-size: clamp(18px, 1.7vw, 26px);
+      line-height: 1.32;
+      font-weight: 740;
+    }
+    .flow .arrow {
+      display: flex;
+      align-items: center;
+      color: var(--cyan);
+      font-size: clamp(30px, 3vw, 46px);
+    }
+
+    .code {
+      width: 100%;
+      margin: 0;
+      padding: clamp(22px, 2.5vw, 36px);
+      overflow: hidden;
+      white-space: pre-wrap;
+      background: #06101d;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      color: #d6e9f8;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: clamp(15px, 1.45vw, 22px);
+      line-height: 1.55;
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.03);
+    }
+
+    .two-paths {
+      display: grid;
+      grid-template-columns: 1fr 90px 1fr;
+      align-items: center;
+      gap: 20px;
+    }
+    .two-paths .join {
+      color: var(--cyan);
+      text-align: center;
+      font-size: 54px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 13px;
+      margin: 0 6px 8px 0;
+      border-radius: 999px;
+      border: 1px solid rgba(85, 215, 255, 0.28);
+      color: var(--cyan);
+      background: rgba(85, 215, 255, 0.07);
+      font-size: clamp(13px, 1.2vw, 18px);
+      font-weight: 740;
+    }
+
+    .footer {
+      position: absolute;
+      left: clamp(26px, 3vw, 48px);
+      right: clamp(26px, 3vw, 48px);
+      bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: rgba(157, 179, 200, 0.62);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    .progress {
+      position: fixed;
+      z-index: 20;
+      left: 0;
+      bottom: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--cyan), var(--green));
+      transition: width 180ms ease-out;
+    }
+
+    .controls {
+      position: fixed;
+      z-index: 30;
+      right: 18px;
+      top: 18px;
+      display: flex;
+      gap: 8px;
+      opacity: 0.2;
+      transition: opacity 160ms ease;
+    }
+    .controls:hover, .controls:focus-within { opacity: 1; }
+    .controls button {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(7, 17, 31, 0.85);
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .notes-panel {
+      position: fixed;
+      z-index: 50;
+      left: 5vw;
+      right: 5vw;
+      bottom: 5vh;
+      max-height: 35vh;
+      overflow: auto;
+      display: none;
+      padding: 24px 30px;
+      border: 1px solid rgba(255, 199, 102, 0.35);
+      border-radius: 18px;
+      background: rgba(4, 12, 22, 0.96);
+      box-shadow: var(--shadow);
+      color: #ffe3ad;
+      font-size: clamp(16px, 1.4vw, 21px);
+      line-height: 1.55;
+    }
+    .notes-panel.open { display: block; }
+
+    .help {
+      position: fixed;
+      z-index: 60;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(3, 10, 18, 0.84);
+    }
+    .help.open { display: grid; }
+    .help-box {
+      width: min(760px, 86vw);
+      padding: 36px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .help-box p { font-size: 20px; color: var(--muted); }
+    kbd {
+      display: inline-block;
+      min-width: 32px;
+      padding: 4px 8px;
+      margin-right: 8px;
+      border: 1px solid var(--line);
+      border-bottom-width: 3px;
+      border-radius: 8px;
+      color: var(--ink);
+      background: #07111f;
+      text-align: center;
+    }
+
+    body.overview { overflow: auto; }
+    body.overview .deck {
+      height: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 24px;
+      padding: 24px;
+    }
+    body.overview .slide,
+    body.overview .slide.active {
+      position: relative;
+      inset: auto;
+      display: flex;
+      aspect-ratio: 16 / 9;
+      min-height: 0;
+      padding: 28px;
+      opacity: 1;
+      transform: none;
+      animation: none;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--bg);
+      cursor: pointer;
+    }
+    body.overview .slide > * { transform: scale(0.43); transform-origin: top left; width: 232%; }
+    body.overview .slide .footer { display: none; }
+    body.overview .progress, body.overview .controls { display: none; }
+
+    @media (max-width: 850px) {
+      .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow { gap: 8px; }
+      .flow .arrow { font-size: 24px; }
+    }
+
+    @media print {
+      html, body { overflow: visible; background: #fff; }
+      .deck { height: auto; }
+      .slide, .slide.active {
+        position: relative;
+        display: flex;
+        opacity: 1;
+        transform: none;
+        animation: none;
+        width: 13.333in;
+        height: 7.5in;
+        page-break-after: always;
+        background: var(--bg);
+      }
+      .controls, .progress, .notes-panel, .help { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" id="deck">
+    <section class="slide active" data-title="标题">
+      <div class="eyebrow">Code Agent · Memory</div>
+      <h1>Code Agent<br />如何记住一件事？</h1>
+      <p class="subtitle">一条记忆从创建、索引、召回到压缩后重现的源码旅程</p>
+      <div class="meta">组内技术分享 · Memory 主题 · 约 30 分钟</div>
+      <aside class="speaker-notes">开场不要先讲目录。先问大家：我们说 Agent “记住了”，它究竟把什么东西放到了哪里？今天用一条测试约定走完整条代码路径。</aside>
+    </section>
+
+    <section class="slide" data-title="真实问题">
+      <div class="eyebrow">01 · 一个真实问题</div>
+      <div class="big-quote">“以后集成测试不要 mock 数据库。上次 mock 全过了，但生产迁移失败了。”</div>
+      <p class="meta">几天后，新会话：帮我给订单模块补一组集成测试。</p>
+      <aside class="speaker-notes">让大家代入：代码可以重新读，Git 可以重新查，但事故原因和团队意图并不一定存在于仓库。真正应该被记住的是这个不可推导的背景。</aside>
+    </section>
+
+    <section class="slide" data-title="什么值得记">
+      <div class="eyebrow">Memory 的边界</div>
+      <h2>先问：它能否从项目里重新推导？</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="muted">可以重新推导</h3>
+          <p>函数签名、构建命令、Git diff、代码结构</p>
+          <p class="rose"><strong>通常不写 Memory</strong></p>
+        </div>
+        <div class="card">
+          <h3 class="green">无法重新推导</h3>
+          <p>用户偏好、行为反馈、项目动机、外部信息入口</p>
+          <p class="green"><strong>值得持久化</strong></p>
+        </div>
+      </div>
+      <aside class="speaker-notes">这是 memoryTypes.ts 注释里很有价值的产品边界。Memory 不是第二个代码索引，也不是完整聊天归档。</aside>
+    </section>
+
+    <section class="slide" data-title="持久上下文家族">
+      <div class="eyebrow">先把地图补完整</div>
+      <h2>“Memory”不是一个文件，而是一组机制</h2>
+      <div class="grid-4">
+        <div class="card"><h3 class="accent">Instructions</h3><p><code>CLAUDE.md</code><br /><code>.claude/rules/</code></p><p>人写、直接或按路径加载</p></div>
+        <div class="card"><h3 class="green">Auto Memory</h3><p><code>MEMORY.md</code><br />topic files</p><p>Agent 写、正文按需召回</p></div>
+        <div class="card"><h3 class="amber">Agent Memory</h3><p>每种 Agent 的独立目录</p><p>spawn 时注入专属 prompt/index</p></div>
+        <div class="card"><h3 class="rose">Session Memory</h3><p>摘要与会话连续性</p><p>下次 Context 主题深入</p></div>
+      </div>
+      <aside class="speaker-notes">源码也刻意区分 Instructions 与 AutoMem/TeamMem。它们同属持久上下文家族，但不是同一套加载实现。先给出完整地图，再深入 Auto Memory。</aside>
+    </section>
+
+    <section class="slide" data-title="CLAUDE 与 Rules">
+      <div class="eyebrow">claudemd.ts · Instruction Memory</div>
+      <h2>人写的规则：从全局到路径</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="accent">CLAUDE.md 层级</h3>
+          <p>Managed → User → Project → Local</p>
+          <p>从 CWD 向上发现；越靠近目标目录越具体。</p>
+          <p><code>@include</code> 可拆分长说明。</p>
+        </div>
+        <div class="card">
+          <h3 class="green">.claude/rules/*.md</h3>
+          <p>无 <code>paths</code>：无条件加载</p>
+          <p>有 <code>paths</code>：目标文件匹配 glob 时加载</p>
+          <p>适合 testing / security / module 规则。</p>
+        </div>
+      </div>
+      <p class="meta"><code>AGENTS.md</code> 会被 /init 调查；当前 runtime 直接注入的是 CLAUDE.md / CLAUDE.local.md / rules。</p>
+      <aside class="speaker-notes">如果大家习惯叫 AGENTS.md，需要当场校正当前实现：getMemoryFiles 直接识别的是 CLAUDE.md 体系。AGENTS.md 是 /init 的兼容输入，不是这条运行时加载链。</aside>
+    </section>
+
+    <section class="slide" data-title="Agent Memory">
+      <div class="eyebrow">agent definition + agentMemory.ts</div>
+      <h2>每种专家 Agent，都可以有自己的经验</h2>
+      <div class="grid-2">
+        <pre class="code">---
+name: code-reviewer
+description: 审查当前改动
+memory: project
+tools: Read, Grep, Glob
+---
+
+持续积累常见缺陷、架构模式与审查经验。</pre>
+        <div>
+          <div class="card"><h3><span class="accent">user</span></h3><p>跨项目通用经验</p></div>
+          <div class="card" style="margin-top:14px"><h3><span class="green">project</span> / <span class="amber">local</span></h3><p>团队共享的项目经验 / 当前机器私有经验</p></div>
+        </div>
+      </div>
+      <p class="meta">spawn 时复用 <code>buildMemoryPrompt()</code>；并补充 Read / Edit / Write 维护独立目录。</p>
+      <aside class="speaker-notes">Agent 定义文件不是记忆正文，它通过 memory frontmatter 开启独立 memory。隔离的价值是让 reviewer、test-runner、architect 各自积累 institutional knowledge，而不污染主 Agent。</aside>
+    </section>
+
+    <section class="slide" data-title="Session Memory">
+      <div class="eyebrow">SessionMemory · 当前会话</div>
+      <h2>它不是长期知识，而是滚动的工作摘要</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="accent">summary.md</h3>
+          <p><code>&lt;project&gt;/&lt;sessionId&gt;/session-memory/</code></p>
+          <p>任务、Current State、文件、流程、错误与修正、关键结果、Worklog。</p>
+        </div>
+        <div class="card">
+          <h3 class="green">post-sampling 更新</h3>
+          <p>主线程达到阈值后，由 sequential forked agent 增量编辑。</p>
+          <p>成功后记录 <code>lastSummarizedMessageId</code>。</p>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:30px">Auto Memory 让未来会话“不失忆”；Session Memory 让当前工作“不掉线”。</p>
+      <aside class="speaker-notes">默认 10K context tokens 初始化，之后至少增长 5K tokens；3 次工具调用是更新信号之一。配置可远端覆盖，因此数字要标为当前默认值。</aside>
+    </section>
+
+    <section class="slide" data-title="Session Memory 与 Compact">
+      <div class="eyebrow">sessionMemoryCompact.ts</div>
+      <h2>它也是 Compact 的预计算摘要</h2>
+      <div class="flow">
+        <div class="node">滚动维护<br />summary.md</div><div class="arrow">→</div>
+        <div class="node">等待正在进行的<br />提取</div><div class="arrow">→</div>
+        <div class="node">定位 last<br />summarized ID</div><div class="arrow">→</div>
+        <div class="node">保留最近消息<br />和 tool pairs</div><div class="arrow">→</div>
+        <div class="node">作为 compact<br />summary</div>
+      </div>
+      <div class="grid-2" style="margin-top:30px">
+        <div class="card"><h3>可用则复用</h3><p>避免在压缩临界点才从整段历史重新总结。</p></div>
+        <div class="card"><h3>不可用则回退</h3><p>空模板、边界缺失或结果仍过大时走传统 compact。</p></div>
+      </div>
+      <aside class="speaker-notes">这次只讲消费接口。完整的消息保留窗口、boundary marker、hooks 恢复和阈值判断留给下一次 Context 分享。</aside>
+    </section>
+
+    <section class="slide" data-title="全景">
+      <div class="eyebrow">现在深入 Auto Memory</div>
+      <h2>一条自动记忆，有两次流动</h2>
+      <div class="two-paths">
+        <div class="card">
+          <h3 class="amber">写入</h3>
+          <p>主 Agent 主动写入</p>
+          <p>extractMemories 后台沉淀</p>
+          <p><code>memory/*.md</code> + <code>MEMORY.md</code></p>
+        </div>
+        <div class="join">⇄</div>
+        <div class="card">
+          <h3 class="accent">读取</h3>
+          <p>索引可直接注入，也可仅服务召回</p>
+          <p>正文经 selector 按需召回</p>
+          <p><code>relevant_memories</code></p>
+        </div>
+      </div>
+      <aside class="speaker-notes">从这里开始深入 Auto Memory。注意 tengu_moth_copse 开启时 filterInjectedMemoryFiles 会移除 AutoMem/TeamMem 的直接索引注入，所以不要绝对化成“索引永远常驻上下文”。</aside>
+    </section>
+
+    <section class="slide" data-title="记忆文件">
+      <div class="eyebrow">Memory file</div>
+      <h2>它首先是一张可读的知识卡片</h2>
+      <pre class="code">---
+name: feedback_testing
+description: 集成测试必须使用真实数据库，禁止 mock
+type: feedback
+---
+
+集成测试必须使用真实数据库。
+
+Why: 上季度 mock 测试通过，但生产迁移失败。
+How to apply: 环境不可用时报告阻塞，不静默退化。</pre>
+      <aside class="speaker-notes">强调 description 是检索接口的一部分，不只是给人看的摘要。Why 和 How to apply 帮助未来 Agent 判断边界，而不是机械执行一句规则。</aside>
+    </section>
+
+    <section class="slide" data-title="四种类型">
+      <div class="eyebrow">memoryTypes.ts</div>
+      <h2>四种语义类型</h2>
+      <div class="grid-4">
+        <div class="card"><h3 class="accent">user</h3><p>角色、目标、知识、偏好</p></div>
+        <div class="card"><h3 class="green">feedback</h3><p>纠正与经过验证的做法</p></div>
+        <div class="card"><h3 class="amber">project</h3><p>项目状态、动机、时间点</p></div>
+        <div class="card"><h3 class="rose">reference</h3><p>外部系统的信息入口</p></div>
+      </div>
+      <p class="meta">语义类型 ≠ 存储路径类型；TEAMMEM 也是 feature-gated。</p>
+      <aside class="speaker-notes">不要在这里深入路径矩阵。只点明另一套 User/Project/Local/Managed/AutoMem/TeamMem 是存储位置，解决不同问题。</aside>
+    </section>
+
+    <section class="slide" data-title="创建路径">
+      <div class="eyebrow">写入路径</div>
+      <h2>谁来决定“这值得记住”？</h2>
+      <div class="grid-2">
+        <div class="card">
+          <span class="number">A</span>
+          <h3>主 Agent 直接写</h3>
+          <p>意图明确、及时；适合用户显式要求或当前任务中清晰的稳定背景。</p>
+        </div>
+        <div class="card">
+          <span class="number">B</span>
+          <h3>extractMemories 提取</h3>
+          <p>query 结束后由 forked agent 回看新增消息，识别值得沉淀的信息。</p>
+        </div>
+      </div>
+      <aside class="speaker-notes">这两条路互补：主 Agent 有当前意图，后台提取器有专门注意力。接下来讲它们如何不重复写。</aside>
+    </section>
+
+    <section class="slide" data-title="提取流程">
+      <div class="eyebrow">extractMemories.ts</div>
+      <h2>后台提取不是“再总结一次”</h2>
+      <div class="flow">
+        <div class="node">Stop Hooks</div><div class="arrow">→</div>
+        <div class="node">新消息<br />cursor</div><div class="arrow">→</div>
+        <div class="node">现有 Memory<br />manifest</div><div class="arrow">→</div>
+        <div class="node">Forked Agent<br />max 5 turns</div>
+      </div>
+      <div class="grid-3" style="margin-top:32px">
+        <div class="card"><h3>有权限边界</h3><p>只允许向 auto-memory 路径写入。</p></div>
+        <div class="card"><h3>有增量游标</h3><p>只处理上次成功提取之后的新消息。</p></div>
+        <div class="card"><h3>有并发合并</h3><p>运行中只保留最新 context，完成后补 trailing run。</p></div>
+      </div>
+      <aside class="speaker-notes">源码看点：预注入 manifest 避免浪费一轮 ls；maxTurns=5 防止背景 agent 陷入验证兔子洞；cursor 只在成功后推进。</aside>
+    </section>
+
+    <section class="slide" data-title="避免撞车">
+      <div class="eyebrow">hasMemoryWritesSince()</div>
+      <h2>两条写入路径如何避免撞车</h2>
+      <div class="flow">
+        <div class="node">主 Agent<br />已写 Memory？</div><div class="arrow">→</div>
+        <div class="node"><span class="green">是</span><br />跳过后台提取<br />推进 cursor</div>
+        <div class="arrow">／</div>
+        <div class="node"><span class="amber">否</span><br />启动提取器</div>
+      </div>
+      <p class="lead" style="margin-top:42px">不是“最后写入者获胜”，而是让两条路径在每个消息区间互斥。</p>
+      <aside class="speaker-notes">这是我建议大家记住的第一个漂亮工程设计。它避免重复、冲突和无谓的后台模型调用。</aside>
+    </section>
+
+    <section class="slide" data-title="索引入口">
+      <div class="eyebrow">memdir.ts</div>
+      <h2>MEMORY.md 是持久入口，不等于永远直接注入</h2>
+      <div class="grid-2">
+        <pre class="code"># Memory Index
+
+- [Testing Policy](feedback_testing.md)
+  — 集成测试必须使用真实数据库
+
+- [Release Freeze](project_release.md)
+  — 周四起冻结非关键合并</pre>
+        <div>
+          <p class="lead"><span class="accent">MEMORY.md</span> 始终在磁盘。</p>
+          <p>默认路径可以注入 System Prompt；特定 feature 下会过滤 AutoMem/TeamMem 索引，改走 prefetch。</p>
+          <div><span class="tag">200 行</span><span class="tag">25,000 bytes</span><span class="tag">feature-aware</span></div>
+        </div>
+      </div>
+      <aside class="speaker-notes">这是对上一版的关键修正：filterInjectedMemoryFiles 在 tengu_moth_copse 开启时移除 AutoMem/TeamMem 的直接注入。MEMORY.md 仍是持久入口和管理索引，但不保证每次都完整进入主模型。</aside>
+    </section>
+
+    <section class="slide" data-title="召回调用链">
+      <div class="eyebrow">读取路径 · 核心</div>
+      <h2>正文怎样按需进入上下文</h2>
+      <div class="flow">
+        <div class="node">Prefetch</div><div class="arrow">→</div>
+        <div class="node">Scan<br />headers</div><div class="arrow">→</div>
+        <div class="node">Side query<br />select ≤ 5</div><div class="arrow">→</div>
+        <div class="node">Read with<br />limits</div><div class="arrow">→</div>
+        <div class="node">relevant_<br />memories</div>
+      </div>
+      <p class="meta">attachments.ts → memoryScan.ts → findRelevantMemories.ts → attachments.ts</p>
+      <aside class="speaker-notes">这是全场核心页。后面三页分别拆 Scan、Select、Inject。提醒大家先看数据流，函数名自然就能挂上去。</aside>
+    </section>
+
+    <section class="slide" data-title="扫描候选">
+      <div class="eyebrow">memoryScan.ts</div>
+      <h2>第一步：只扫描 Header</h2>
+      <div class="grid-2">
+        <div class="card">
+          <span class="number">200</span>
+          <h3>最多扫描文件数</h3>
+          <p>按新到旧限制候选规模。</p>
+        </div>
+        <div class="card">
+          <span class="number">30</span>
+          <h3>frontmatter 行数</h3>
+          <p>获取 filename、description、type、mtime 和 path。</p>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:34px">先构建轻量 manifest，再决定是否读取正文。</p>
+      <aside class="speaker-notes">这是典型的分层加载。description 是低成本检索面；正文只有在被选中后才读取。</aside>
+    </section>
+
+    <section class="slide" data-title="选择相关记忆">
+      <div class="eyebrow">findRelevantMemories.ts</div>
+      <h2>第二步：让模型克制地选择</h2>
+      <div class="grid-2">
+        <div>
+          <ul>
+            <li>最多选择 5 条</li>
+            <li>只有明确有帮助才选</li>
+            <li>不确定就不选，可以返回空列表</li>
+            <li>JSON schema 输出，再过滤非法文件名</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="accent">不是向量检索</h3>
+          <p><strong>frontmatter manifest + LLM selector</strong></p>
+          <p>简单、可解释，也适合当前候选规模。</p>
+        </div>
+      </div>
+      <aside class="speaker-notes">可以现场打开 SELECT_MEMORIES_SYSTEM_PROMPT。它对 precision 的偏好很强：宁可不召回，也不把模糊相关内容塞进主模型。</aside>
+    </section>
+
+    <section class="slide" data-title="注入预算">
+      <div class="eyebrow">attachments.ts</div>
+      <h2>第三步：选择之后才支付正文成本</h2>
+      <div class="grid-3">
+        <div class="card"><span class="number">5</span><h3>每轮最多</h3><p>跨目录合并后再次 slice。</p></div>
+        <div class="card"><span class="number">200 / 4KB</span><h3>单文件读取</h3><p>截断时保留头部并提示可继续 Read。</p></div>
+        <div class="card"><span class="number">60KB</span><h3>会话累计</h3><p>这是 bytes，不是 60K tokens。</p></div>
+      </div>
+      <p class="meta">召回结果包装为 <code>relevant_memories</code> attachment。</p>
+      <aside class="speaker-notes">强调三层预算：选择数量、单文件内容、会话累计。不要把 byte 直接换算成 token 或上下文占比。</aside>
+    </section>
+
+    <section class="slide" data-title="非阻塞预取">
+      <div class="eyebrow">startRelevantMemoryPrefetch()</div>
+      <h2>召回不是每轮必等的同步关卡</h2>
+      <div class="flow">
+        <div class="node">用户输入</div><div class="arrow">→</div>
+        <div class="node">异步启动<br />selector</div><div class="arrow">⇢</div>
+        <div class="node">主模型与工具<br />继续工作</div><div class="arrow">→</div>
+        <div class="node">完成则消费<br />未完成则后续重试</div>
+      </div>
+      <div class="grid-2" style="margin-top:34px">
+        <div class="card"><h3>机会式预取</h3><p>降低 retrieval 对主链路延迟的影响。</p></div>
+        <div class="card"><h3>可取消</h3><p>用户 Escape 会取消 child side query。</p></div>
+      </div>
+      <aside class="speaker-notes">这是第二个值得喜欢的工程点：Memory retrieval 是增强路径，不轻易成为阻塞点。</aside>
+    </section>
+
+    <section class="slide" data-title="去重">
+      <div class="eyebrow">collectSurfacedMemories()</div>
+      <h2>为什么不会反复注入同一条记忆</h2>
+      <ul>
+        <li>扫描当前 messages 中已有的 <code>relevant_memories</code></li>
+        <li>选择前排除已经出现过的 path</li>
+        <li><code>readFileState</code> 再排除模型主动读过的文件</li>
+        <li>同时累计正文 bytes，执行 60KB throttle</li>
+      </ul>
+      <p class="lead" style="margin-top:38px">去重发生在 selector <span class="amber">之前</span>，避免浪费它的 5 个名额。</p>
+      <aside class="speaker-notes">源码注释称后面的检查是 belt-and-suspenders。重点是 early filter：把选择预算留给新候选。</aside>
+    </section>
+
+    <section class="slide" data-title="压缩边界">
+      <div class="eyebrow">Memory × Compact</div>
+      <h2>压缩以后，记忆去哪了？</h2>
+      <div class="grid-3">
+        <div class="card"><span class="number">1</span><h3>文件还在</h3><p>CLAUDE.md、rules、MEMORY.md 与 topic files 都没有被删除。</p></div>
+        <div class="card"><span class="number">2</span><h3>旧附件离开</h3><p>relevant_memories 不再作为原始历史留在 transcript。</p></div>
+        <div class="card"><span class="number">3</span><h3>可以再召回</h3><p>持久化正文仍在，下轮 selector 可以重新选择。</p></div>
+      </div>
+      <aside class="speaker-notes">这次只讲接口，不讲完整 compact。下一次分享继续解释摘要、最近文件、Skill 重建与触发阈值。</aside>
+    </section>
+
+    <section class="slide" data-title="自然重置">
+      <div class="eyebrow">一个很巧的结果</div>
+      <h2>Compact 自然重置去重与预算</h2>
+      <pre class="code">压缩前：[可选 MEMORY.md 注入] + relevant_memories + 对话历史
+                         │
+                         ▼ compact
+压缩后：[可选 MEMORY.md 注入] + 摘要
+                         │
+                         ▼ 新问题
+         findRelevantMemories() 可以再次召回正文</pre>
+      <p class="lead" style="margin-top:30px">因为 path 和累计 bytes 来自“扫描当前 messages”，而不是另一套永久状态。</p>
+      <aside class="speaker-notes">直接引用 attachments.ts 中 collectSurfacedMemories 的注释思想。旧附件消失以后，同一记忆重新出现是合法的。</aside>
+    </section>
+
+    <section class="slide" data-title="生命周期回放">
+      <div class="eyebrow">回到开场例子</div>
+      <h2>一条测试约定的完整旅程</h2>
+      <div class="flow">
+        <div class="node">用户反馈</div><div class="arrow">→</div>
+        <div class="node">feedback<br />Memory</div><div class="arrow">→</div>
+        <div class="node">MEMORY.md<br />索引</div><div class="arrow">→</div>
+        <div class="node">按需召回</div><div class="arrow">→</div>
+        <div class="node">真实 DB<br />测试决策</div>
+      </div>
+      <div class="flow" style="margin-top:22px; max-width:70%; align-self:center">
+        <div class="node">Compact</div><div class="arrow">→</div>
+        <div class="node">新问题</div><div class="arrow">→</div>
+        <div class="node">再次召回</div>
+      </div>
+      <aside class="speaker-notes">用 40 秒把整条链路串起来。听众此时应该已经能说出每一步对应的大致文件。</aside>
+    </section>
+
+    <section class="slide" data-title="源码路线">
+      <div class="eyebrow">Code tour</div>
+      <h2>推荐按数据流读源码</h2>
+      <div class="grid-2">
+        <ol>
+          <li><code>claudemd.ts</code></li>
+          <li><code>agentMemory.ts</code></li>
+          <li><code>sessionMemory.ts</code> + <code>sessionMemoryCompact.ts</code></li>
+          <li><code>memoryTypes.ts</code></li>
+          <li><code>extractMemories.ts</code></li>
+        </ol>
+        <ol start="6">
+          <li><code>memdir.ts</code></li>
+          <li><code>memoryScan.ts</code></li>
+          <li><code>findRelevantMemories.ts</code></li>
+          <li><code>attachments.ts</code></li>
+        </ol>
+      </div>
+      <p class="meta">最后再去 compact.ts 看 Memory 的交界面；不要一开始扎进压缩实现。</p>
+      <aside class="speaker-notes">如果现场要跳源码，顺序是 Instructions → Agent isolation → Session continuity → Auto Memory Save → Index → Recall → Inject。</aside>
+    </section>
+
+    <section class="slide" data-title="可演进方向">
+      <div class="eyebrow">下一步可以更好</div>
+      <h2>从可用的文件系统，走向可解释的 LLM Wiki</h2>
+      <div class="grid-3">
+        <div class="card"><h3 class="accent">召回解释</h3><p>为什么选中？回答是否真正使用？</p></div>
+        <div class="card"><h3 class="green">来源追溯</h3><p>source session、message 与证据片段。</p></div>
+        <div class="card"><h3 class="amber">时间与冲突</h3><p>事实有效期、private/team 优先级。</p></div>
+      </div>
+      <p class="lead" style="margin-top:34px">先把卡片、来源和关联做好，再决定是否需要向量库或时间图谱。</p>
+      <aside class="speaker-notes">这页让大家从“理解现状”转向“愿意参与演进”。不要展开成 roadmap，邀请组内讨论即可。</aside>
+    </section>
+
+    <section class="slide" data-title="总结">
+      <div class="eyebrow">Takeaways</div>
+      <h2>记住三件事</h2>
+      <div class="grid-3">
+        <div class="card"><span class="number">01</span><p><strong>Instructions、Auto、Agent、Session Memory</strong> 同属持久上下文，但不是同一套机制。</p></div>
+        <div class="card"><span class="number">02</span><p><strong>规则分层加载，长期记忆按需召回，专家经验隔离，会话状态滚动摘要。</strong></p></div>
+        <div class="card"><span class="number">03</span><p><strong>Session Memory 预计算 compact 摘要</strong>；长期文件仍可重新加载或召回。</p></div>
+      </div>
+      <aside class="speaker-notes">收束到三个可以复述的句子。然后预告下一次：上下文工作台真的放不下时，系统删了什么、总结了什么、重建了什么？</aside>
+    </section>
+
+    <section class="slide" data-title="Q&A">
+      <div class="eyebrow">Next · Context</div>
+      <h1>Memory 是外存。<br /><span class="accent">Context 是工作台。</span></h1>
+      <p class="subtitle">下一次：工作台放不下时，系统如何修剪、压缩与重建？</p>
+      <p class="meta">Q &amp; A</p>
+      <aside class="speaker-notes">可以把问题引向三类：召回准确率、上下文成本、来源与冲突。涉及完整 compact 的问题先记下，作为下一次分享输入。</aside>
+    </section>
+  </main>
+
+  <div class="controls" aria-label="演示控制">
+    <button type="button" id="prev" title="上一页">←</button>
+    <button type="button" id="next" title="下一页">→</button>
+    <button type="button" id="overview" title="总览（O）">▦</button>
+    <button type="button" id="notes" title="讲者备注（N）">N</button>
+    <button type="button" id="fullscreen" title="全屏（F）">⛶</button>
+    <button type="button" id="helpButton" title="帮助（?）">?</button>
+  </div>
+  <div class="progress" id="progress"></div>
+  <div class="notes-panel" id="notesPanel" role="note"></div>
+  <div class="help" id="help" role="dialog" aria-modal="true" aria-label="快捷键帮助">
+    <div class="help-box">
+      <h3>演示快捷键</h3>
+      <p><kbd>←</kbd><kbd>→</kbd> 或 <kbd>Space</kbd> 翻页</p>
+      <p><kbd>F</kbd> 全屏　<kbd>O</kbd> 页面总览　<kbd>N</kbd> 讲者备注</p>
+      <p><kbd>Home</kbd> 首页　<kbd>End</kbd> 末页　<kbd>?</kbd> 显示/关闭帮助</p>
+      <p class="muted">URL 中的 #数字 可以直接定位到指定页。</p>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const slides = [...document.querySelectorAll('.slide')];
+      const progress = document.getElementById('progress');
+      const notesPanel = document.getElementById('notesPanel');
+      const help = document.getElementById('help');
+      let index = Math.max(0, Math.min(slides.length - 1, (Number(location.hash.slice(1)) || 1) - 1));
+
+      slides.forEach((slide, i) => {
+        const footer = document.createElement('div');
+        footer.className = 'footer';
+        footer.innerHTML = `<span>Code Agent · Memory</span><span>${String(i + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}</span>`;
+        slide.appendChild(footer);
+        slide.addEventListener('click', () => {
+          if (document.body.classList.contains('overview')) {
+            index = i;
+            toggleOverview(false);
+            render();
+          }
+        });
+      });
+
+      function render() {
+        slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+        progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+        if (location.hash !== `#${index + 1}`) history.replaceState(null, '', `#${index + 1}`);
+        const note = slides[index].querySelector('.speaker-notes');
+        notesPanel.textContent = note ? note.textContent.trim() : '本页没有讲者备注。';
+        document.title = `${index + 1}/${slides.length} · ${slides[index].dataset.title} · Code Agent Memory`;
+      }
+
+      function go(delta) {
+        if (document.body.classList.contains('overview')) return;
+        index = Math.max(0, Math.min(slides.length - 1, index + delta));
+        render();
+      }
+
+      function toggleOverview(force) {
+        const nextState = typeof force === 'boolean' ? force : !document.body.classList.contains('overview');
+        document.body.classList.toggle('overview', nextState);
+        if (!nextState) window.scrollTo(0, 0);
+      }
+
+      function toggleNotes() {
+        notesPanel.classList.toggle('open');
+      }
+
+      function toggleHelp() {
+        help.classList.toggle('open');
+      }
+
+      document.getElementById('prev').addEventListener('click', () => go(-1));
+      document.getElementById('next').addEventListener('click', () => go(1));
+      document.getElementById('overview').addEventListener('click', () => toggleOverview());
+      document.getElementById('notes').addEventListener('click', toggleNotes);
+      document.getElementById('helpButton').addEventListener('click', toggleHelp);
+      document.getElementById('fullscreen').addEventListener('click', () => {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+        else document.exitFullscreen?.();
+      });
+      help.addEventListener('click', (event) => { if (event.target === help) toggleHelp(); });
+
+      window.addEventListener('hashchange', () => {
+        const target = Number(location.hash.slice(1));
+        if (Number.isFinite(target) && target >= 1 && target <= slides.length) {
+          index = target - 1;
+          render();
+        }
+      });
+
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') { event.preventDefault(); go(1); }
+        else if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); go(-1); }
+        else if (event.key === 'Home') { index = 0; render(); }
+        else if (event.key === 'End') { index = slides.length - 1; render(); }
+        else if (event.key.toLowerCase() === 'f') document.getElementById('fullscreen').click();
+        else if (event.key.toLowerCase() === 'o') toggleOverview();
+        else if (event.key.toLowerCase() === 'n') toggleNotes();
+        else if (event.key === '?') toggleHelp();
+        else if (event.key === 'Escape') { help.classList.remove('open'); notesPanel.classList.remove('open'); }
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>
