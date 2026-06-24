@@ -50,8 +50,12 @@ import {
 } from '../../utils/imageResizer.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
-import { isAutoMemFile } from '../../utils/memoryFileDetection.js'
+import {
+  isAutoManagedMemoryFile,
+  isAutoMemFile,
+} from '../../utils/memoryFileDetection.js'
 import { createUserMessage } from '../../utils/messages.js'
+import { contextInspectorCheckpoint } from '../../utils/contextInspector.js'
 import { getCanonicalName, getMainLoopModel } from '../../utils/model/model.js'
 import {
   mapNotebookCellsToToolResult,
@@ -591,7 +595,7 @@ export const FileReadTool = buildTool({
     }
 
     try {
-      return await callInner(
+      const result = await callInner(
         file_path,
         fullFilePath,
         fullFilePath,
@@ -605,6 +609,35 @@ export const FileReadTool = buildTool({
         context,
         parentMessage?.message.id,
       )
+      if (
+        isAutoManagedMemoryFile(fullFilePath) &&
+        result.data.type === 'text' &&
+        contextInspectorCheckpoint('memory_recall_resolved', {
+          source: 'direct_read',
+          recalledCount: 1,
+          filePath: fullFilePath,
+          requestedPath: file_path,
+          offset,
+          limit,
+          attachments: [
+            {
+              type: 'direct_memory_read',
+              memories: [
+                {
+                  path: fullFilePath,
+                  content: result.data.file.content,
+                  startLine: result.data.file.startLine,
+                  totalLines: result.data.file.totalLines,
+                },
+              ],
+            },
+          ],
+        })
+      ) {
+        // Deliberate opt-in demo breakpoint; keeps Read locals inspectable.
+        debugger
+      }
+      return result
     } catch (error) {
       // Handle file-not-found: suggest similar files
       const code = getErrnoCode(error)

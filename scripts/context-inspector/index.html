@@ -133,7 +133,9 @@
         case 'instructions_loaded': return `${d.injectedFiles?.length ?? 0} injected / ${d.discoveredFiles?.length ?? 0} discovered`;
         case 'agent_memory_loaded': return `${d.agentType ?? 'agent'} · ${d.scope ?? '?'} · ${fmt(textLength(d.memoryPrompt))} chars`;
         case 'memory_prefetch_started': return d.started ? `started · ${d.messageCount ?? 0} messages` : 'not started (gate/input)';
-        case 'memory_recall_resolved': return `${d.recalledCount ?? 0} memories · iteration ${d.iteration ?? '?'}`;
+        case 'memory_recall_resolved': return d.source === 'direct_read'
+          ? `${d.recalledCount ?? 1} memory · direct Read`
+          : `${d.recalledCount ?? 0} memories · iteration ${d.iteration ?? '?'}`;
         case 'session_memory_updated': return `${fmt(textLength(d.content))} chars · ${d.messageCount ?? 0} messages`;
         case 'api_request_ready': return `${d.messages?.length ?? 0} messages · ${d.tools?.length ?? 0} tools`;
         default: return event.stage;
@@ -191,7 +193,7 @@
         ['发现文件', d.discoveredFiles?.length ?? 0], ['注入文件', d.injectedFiles?.length ?? 0], ['渲染字符', textLength(d.renderedUserContext)]
       ];
       if (event.stage === 'memory_recall_resolved') return [
-        ['召回记忆', d.recalledCount ?? 0], ['附件数', d.attachments?.length ?? 0], ['所在迭代', d.iteration ?? 0]
+        ['召回记忆', d.recalledCount ?? 0], ['附件数', d.attachments?.length ?? 0], ['来源', d.source === 'direct_read' ? 'Read 工具' : 'Selector']
       ];
       if (event.stage === 'session_memory_updated') return [
         ['摘要字符', textLength(d.content)], ['消息数', d.messageCount ?? 0], ['更新间隔 tokens', d.config?.minimumTokensBetweenUpdate ?? 0]
@@ -217,7 +219,8 @@
         <details><summary>发现但未注入的文件</summary>${fileCards((d.discoveredFiles || []).filter(file => !(d.injectedFiles || []).some(injected => injected.path === file.path)))}</details>
         <details><summary>拼接后的 userContext</summary><pre>${esc(d.renderedUserContext)}</pre></details>`;
       if (event.stage === 'memory_recall_resolved') return `
-        <details open><summary>召回附件</summary><pre>${esc(JSON.stringify(d.attachments, null, 2))}</pre></details>`;
+        ${d.source === 'direct_read' ? `<div class="warning">这条记忆由模型通过 Read 工具直接读取，不是 Selector 预取附件。</div>` : ''}
+        <details open><summary>${d.source === 'direct_read' ? '直接读取的记忆' : '召回附件'}</summary><pre>${esc(JSON.stringify(d.attachments, null, 2))}</pre></details>`;
       if (event.stage === 'session_memory_updated') return `
         <details open><summary>Session summary.md</summary><pre>${esc(d.content)}</pre></details>
         <details><summary>更新配置</summary><pre>${esc(JSON.stringify(d.config, null, 2))}</pre></details>`;

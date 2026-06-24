@@ -35,19 +35,39 @@ if (!noForcedSessionMemory) {
   })
 }
 
-const dashboard = Bun.spawn(
-  [process.execPath, 'run', 'scripts/context-inspector/server.ts', '--port', String(port)],
-  {
-    cwd: process.cwd(),
-    env,
-    stdout: 'ignore',
-    stderr: 'inherit',
-  },
-)
+async function findExistingDashboard(): Promise<boolean> {
+  try {
+    const response = await fetch(`${dashboardUrl}/api/health`)
+    if (!response.ok) return false
+    const payload = (await response.json()) as { ok?: boolean; eventsPath?: string }
+    return payload.ok === true && typeof payload.eventsPath === 'string'
+  } catch {
+    return false
+  }
+}
+
+const reusedDashboard = await findExistingDashboard()
+const dashboard = reusedDashboard
+  ? null
+  : Bun.spawn(
+      [
+        process.execPath,
+        'run',
+        'scripts/context-inspector/server.ts',
+        '--port',
+        String(port),
+      ],
+      {
+        cwd: process.cwd(),
+        env,
+        stdout: 'ignore',
+        stderr: 'inherit',
+      },
+    )
 
 async function waitForDashboard(): Promise<void> {
   for (let attempt = 0; attempt < 40; attempt++) {
-    if (dashboard.exitCode !== null) {
+    if (dashboard && dashboard.exitCode !== null) {
       throw new Error(`Inspector 网页进程已退出，退出码：${dashboard.exitCode}`)
     }
     try {
@@ -63,8 +83,14 @@ async function waitForDashboard(): Promise<void> {
 
 try {
   await waitForDashboard()
-  console.log(`\nContext Memory Inspector 已启动：${dashboardUrl}`)
-  console.log('CLI 退出后，网页服务会自动关闭。\n')
+  console.log(
+    `\nContext Memory Inspector ${reusedDashboard ? '已复用' : '已启动'}：${dashboardUrl}`,
+  )
+  console.log(
+    reusedDashboard
+      ? '检测到已有网页服务；本次 CLI 退出时不会关闭它。\n'
+      : 'CLI 退出后，网页服务会自动关闭。\n',
+  )
 
   if (!noBrowser) {
     Bun.spawn(['cmd.exe', '/c', 'start', '', dashboardUrl], {
@@ -79,7 +105,16 @@ try {
     cliCommand.push('--inspect-wait')
     console.log('CLI 正在等待调试器连接（Bun inspector 默认端口 6499）…')
   }
-  cliCommand.push('run', 'src/entrypoints/cli.tsx', ...cliArgs)
+  cliCommand.push('run', 'src/entrypoints/cli.tsx')
+  const hasExplicitSettingSources = cliArgs.some(
+    argument =>
+      argument === '--setting-sources' ||
+      argument.startsWith('--setting-sources='),
+  )
+  if (!hasExplicitSettingSources) {
+    cliCommand.push('--setting-sources', 'user,project,local')
+  }
+  cliCommand.push(...cliArgs)
 
   const cli = Bun.spawn(cliCommand, {
     cwd: process.cwd(),
@@ -91,6 +126,8 @@ try {
   const exitCode = await cli.exited
   if (exitCode !== 0) process.exitCode = exitCode
 } finally {
-  dashboard.kill()
-  await dashboard.exited
+  if (dashboard) {
+    dashboard.kill()
+    await dashboard.exited
+  }
 }

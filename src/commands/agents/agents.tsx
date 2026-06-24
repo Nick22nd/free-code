@@ -1,9 +1,28 @@
 import * as React from 'react';
+import { getOriginalCwd } from '../../bootstrap/state.js';
 import { AgentsMenu } from '../../components/agents/AgentsMenu.js';
 import type { ToolUseContext } from '../../Tool.js';
 import { getTools } from '../../tools.js';
+import {
+  clearAgentDefinitionsCache,
+  getActiveAgentsFromList,
+  getAgentDefinitionsWithOverrides,
+} from '../../tools/AgentTool/loadAgentsDir.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 export async function call(onDone: LocalJSXCommandOnDone, context: ToolUseContext): Promise<React.ReactNode> {
+  // Re-scan definitions when the management UI opens. The startup snapshot
+  // may be stale when files were created externally or a plugin refresh
+  // replaced AppState after initial discovery.
+  clearAgentDefinitionsCache();
+  const freshDefinitions = await getAgentDefinitionsWithOverrides(getOriginalCwd());
+  context.setAppState(state => ({
+    ...state,
+    agentDefinitions: {
+      ...freshDefinitions,
+      activeAgents: getActiveAgentsFromList(freshDefinitions.allAgents),
+      allowedAgentTypes: state.agentDefinitions.allowedAgentTypes,
+    },
+  }));
   const appState = context.getAppState();
   const permissionContext = appState.toolPermissionContext;
   const tools = getTools(permissionContext);

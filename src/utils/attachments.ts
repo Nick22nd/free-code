@@ -251,6 +251,7 @@ import { removeTeammateFromTeamFile } from './swarm/teamHelpers.js'
 import { unassignTeammateTasks } from './tasks.js'
 import { getCompanionIntroAttachment } from '../buddy/prompt.js'
 import { contextInspectorCheckpoint } from './contextInspector.js'
+import { getWordSegmenter } from './intl.js'
 
 export const TODO_REMINDER_CONFIG = {
   TURNS_SINCE_WRITE: 10,
@@ -2394,8 +2395,15 @@ export function startRelevantMemoryPrefetch(
   }
 
   const input = getUserMessageText(lastUserMessage)
-  // Single-word prompts lack enough context for meaningful term extraction
-  if (!input || !/\s/.test(input.trim())) {
+  // Single-word prompts lack enough context for meaningful term extraction.
+  // Use Unicode word segmentation instead of whitespace: Chinese/Japanese
+  // sentences commonly contain several meaningful terms without any spaces.
+  const wordLikeSegments = input
+    ? [...getWordSegmenter().segment(input.trim())].filter(
+        segment => segment.isWordLike,
+      ).length
+    : 0
+  if (wordLikeSegments < 2) {
     return undefined
   }
 
