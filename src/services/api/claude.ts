@@ -166,6 +166,7 @@ import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from 'src/utils/claudeInChrome/prompt
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
+import { contextInspectorCheckpoint } from 'src/utils/contextInspector.js'
 import { type EffortValue, modelSupportsEffort } from 'src/utils/effort.js'
 import {
   isFastModeAvailable,
@@ -1795,6 +1796,23 @@ async function* queryModel(
         queryCheckpoint('query_client_creation_end')
 
         const params = paramsFromContext(context)
+        if (
+          options.querySource.startsWith('repl_main_thread') &&
+          contextInspectorCheckpoint('api_request_ready', {
+            querySource: options.querySource,
+            attempt,
+            model: params.model,
+            system: params.system,
+            messages: params.messages,
+            tools: params.tools,
+            toolChoice: params.tool_choice,
+            thinking: params.thinking,
+            metadata: params.metadata,
+          })
+        ) {
+          // Deliberate opt-in demo breakpoint; keeps final request locals inspectable.
+          debugger
+        }
         captureAPIRequest(params, options.querySource) // Capture for bug reports
 
         maxOutputTokens = params.max_tokens

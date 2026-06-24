@@ -1,0 +1,42 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Memory Inspector: dashboard",
+      "type": "bun",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/context-inspector/server.ts",
+      "cwd": "${workspaceFolder}",
+      "stopOnEntry": false,
+      "watchMode": false
+    },
+    {
+      "name": "Memory Inspector: CLI with breakpoints",
+      "type": "bun",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/entrypoints/cli.tsx",
+      "cwd": "${workspaceFolder}",
+      "stopOnEntry": false,
+      "watchMode": false,
+      "env": {
+        "CLAUDE_CODE_CONTEXT_INSPECTOR": "1",
+        "CLAUDE_CODE_CONTEXT_INSPECTOR_RESET": "1",
+        "CLAUDE_CODE_CONTEXT_INSPECTOR_BREAKPOINTS": "instructions_loaded,agent_memory_loaded,memory_recall_resolved,session_memory_updated,api_request_ready",
+        "CLAUDE_CODE_CONTEXT_INSPECTOR_FORCE_SESSION_MEMORY": "1",
+        "CLAUDE_CODE_CONTEXT_INSPECTOR_SM_INIT_TOKENS": "1",
+        "CLAUDE_CODE_CONTEXT_INSPECTOR_SM_UPDATE_TOKENS": "1",
+        "CLAUDE_CODE_CONTEXT_INSPECTOR_SM_TOOL_CALLS": "1"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Memory Inspector: dashboard + CLI",
+      "configurations": [
+        "Memory Inspector: dashboard",
+        "Memory Inspector: CLI with breakpoints"
+      ],
+      "stopAll": true
+    }
+  ]
+}

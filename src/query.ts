@@ -110,6 +110,7 @@ import {
 } from './bootstrap/state.js'
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
+import { contextInspectorCheckpoint } from './utils/contextInspector.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const snipModule = feature('HISTORY_SNIP')
@@ -302,6 +303,18 @@ async function* queryLoop(
     state.messages,
     state.toolUseContext,
   )
+  if (
+    querySource.startsWith('repl_main_thread') &&
+    contextInspectorCheckpoint('memory_prefetch_started', {
+      querySource,
+      started: pendingMemoryPrefetch !== undefined,
+      messageCount: state.messages.length,
+      lastMessage: state.messages.at(-1),
+    })
+  ) {
+    // Deliberate opt-in demo breakpoint; keeps prefetch locals inspectable.
+    debugger
+  }
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -1605,6 +1618,26 @@ async function* queryLoop(
         await pendingMemoryPrefetch.promise,
         toolUseContext.readFileState,
       )
+      if (
+        querySource.startsWith('repl_main_thread') &&
+        contextInspectorCheckpoint('memory_recall_resolved', {
+          querySource,
+          iteration: turnCount - 1,
+          recalledCount: memoryAttachments.reduce(
+            (total, attachment) =>
+              total +
+              (attachment.type === 'relevant_memories'
+                ? attachment.memories.length
+                : 0),
+            0,
+          ),
+          attachments: memoryAttachments,
+          readFileStateSize: toolUseContext.readFileState.size,
+        })
+      ) {
+        // Deliberate opt-in demo breakpoint; keeps recall locals inspectable.
+        debugger
+      }
       for (const memAttachment of memoryAttachments) {
         const msg = createAttachmentMessage(memAttachment)
         yield msg

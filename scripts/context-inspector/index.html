@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Context Memory Inspector</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #06101d;
+      --panel: #0b192a;
+      --panel2: #10243a;
+      --ink: #edf7ff;
+      --muted: #8fa8be;
+      --line: rgba(143, 168, 190, .19);
+      --cyan: #56d8ff;
+      --green: #74e2ad;
+      --amber: #ffc968;
+      --pink: #ff86a2;
+      --violet: #b7a0ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif; }
+    body { background: radial-gradient(circle at 80% 0, rgba(86,216,255,.09), transparent 28%), var(--bg); }
+    button, select, input { font: inherit; }
+    header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: rgba(6,16,29,.92); backdrop-filter: blur(16px); }
+    h1 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .toolbar { display: flex; align-items: center; gap: 12px; }
+    .status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--pink); box-shadow: 0 0 12px currentColor; }
+    .status.live .dot { background: var(--green); }
+    select, button { color: var(--ink); background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+    button { cursor: pointer; }
+    label { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
+    main { padding: 20px 24px 34px; }
+    .pipeline { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .stage { min-height: 86px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(150deg, rgba(16,36,58,.8), rgba(8,23,40,.8)); }
+    .stage.active { border-color: color-mix(in srgb, var(--stage-color) 70%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stage-color) 24%, transparent), 0 8px 28px rgba(0,0,0,.15); }
+    .stage-name { font-size: 12px; color: var(--muted); }
+    .stage-value { margin-top: 8px; font-size: 24px; font-weight: 760; color: var(--stage-color); }
+    .stage-last { margin-top: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .layout { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 16px; min-height: calc(100vh - 180px); }
+    .panel { border: 1px solid var(--line); border-radius: 16px; background: rgba(11,25,42,.78); overflow: hidden; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font-size: 14px; }
+    .event-list { max-height: calc(100vh - 255px); overflow: auto; padding: 8px; }
+    .event { width: 100%; text-align: left; padding: 11px; margin-bottom: 7px; border: 1px solid transparent; background: transparent; border-radius: 11px; }
+    .event:hover { background: rgba(255,255,255,.035); }
+    .event.selected { background: rgba(86,216,255,.07); border-color: rgba(86,216,255,.26); }
+    .event-top { display: flex; justify-content: space-between; gap: 8px; }
+    .event-stage { font-weight: 720; font-size: 12px; color: var(--stage-color); }
+    .event-time, .event-summary { color: var(--muted); font-size: 11px; }
+    .event-summary { margin-top: 6px; line-height: 1.4; }
+    .empty { padding: 30px; color: var(--muted); text-align: center; line-height: 1.6; }
+    .detail { padding: 16px; overflow: auto; max-height: calc(100vh - 255px); }
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; margin-bottom: 14px; }
+    .hero h2 { margin: 0 0 6px; font-size: 24px; }
+    .hero p { margin: 0; color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+    .chip { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+    .metric { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
+    .metric b { display: block; font-size: 23px; color: var(--cyan); }
+    .metric span { color: var(--muted); font-size: 11px; }
+    details { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    summary { cursor: pointer; padding: 11px 13px; background: rgba(255,255,255,.025); font-weight: 680; font-size: 12px; }
+    pre { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 "Cascadia Code", Consolas, monospace; color: #d6e7f5; background: rgba(2,9,17,.62); max-height: 420px; }
+    .files { display: grid; gap: 8px; padding: 10px; }
+    .file { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+    .file-path { font: 11px "Cascadia Code", Consolas, monospace; color: var(--cyan); overflow-wrap: anywhere; }
+    .file-meta { margin-top: 5px; color: var(--muted); font-size: 11px; }
+    .warning { margin: 12px 0; padding: 10px 12px; border: 1px solid rgba(255,201,104,.3); border-radius: 10px; color: #ffe0a0; background: rgba(255,201,104,.06); font-size: 12px; }
+    @media (max-width: 1000px) { .pipeline { grid-template-columns: repeat(3, 1fr); } .layout { grid-template-columns: 1fr; } .event-list, .detail { max-height: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Context Memory Inspector</h1>
+      <div class="sub" id="dataDir">等待本地主程序快照…</div>
+    </div>
+    <div class="toolbar">
+      <div class="status" id="status"><span class="dot"></span><span>connecting</span></div>
+      <label>Run <select id="runSelect"></select></label>
+      <label><input id="follow" type="checkbox" checked /> 自动跟随</label>
+      <button id="refresh">刷新</button>
+    </div>
+  </header>
+  <main>
+    <section class="pipeline" id="pipeline"></section>
+    <section class="layout">
+      <aside class="panel">
+        <div class="panel-head"><h2>变化时间线</h2><span class="sub" id="eventCount">0 events</span></div>
+        <div class="event-list" id="events"></div>
+      </aside>
+      <article class="panel">
+        <div class="panel-head"><h2>当前上下文状态</h2><span class="sub">每 800ms 自动刷新</span></div>
+        <div class="detail" id="detail"><div class="empty">启动带 Inspector 环境变量的 CLI 后，这里会出现快照。</div></div>
+      </article>
+    </section>
+  </main>
+  <script>
+    const STAGES = [
+      ['instructions_loaded', 'CLAUDE / Rules', '#56d8ff'],
+      ['agent_memory_loaded', 'Agent Memory', '#74e2ad'],
+      ['memory_prefetch_started', 'Recall Prefetch', '#ffc968'],
+      ['memory_recall_resolved', 'Memory Recalled', '#ff86a2'],
+      ['session_memory_updated', 'Session Memory', '#b7a0ff'],
+      ['api_request_ready', 'Final API Context', '#67a7ff'],
+    ];
+    const stageMap = Object.fromEntries(STAGES.map(([id, label, color]) => [id, { label, color }]));
+    const state = { events: [], runId: '', selectedId: '', loading: false };
+    const $ = id => document.getElementById(id);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const fmt = value => {
+      if (typeof value === 'number') return value.toLocaleString();
+      const numeric = Number(value);
+      return value !== '' && Number.isFinite(numeric) ? numeric.toLocaleString() : String(value ?? '-');
+    };
+    const time = value => new Date(value).toLocaleTimeString('zh-CN', { hour12: false });
+
+    function textLength(value) {
+      if (typeof value === 'string') return value.length;
+      if (Array.isArray(value)) return value.reduce((n, item) => n + textLength(item), 0);
+      if (value && typeof value === 'object') return Object.values(value).reduce((n, item) => n + textLength(item), 0);
+      return 0;
+    }
+
+    function summarize(event) {
+      const d = event.data || {};
+      switch (event.stage) {
+        case 'instructions_loaded': return `${d.injectedFiles?.length ?? 0} injected / ${d.discoveredFiles?.length ?? 0} discovered`;
+        case 'agent_memory_loaded': return `${d.agentType ?? 'agent'} · ${d.scope ?? '?'} · ${fmt(textLength(d.memoryPrompt))} chars`;
+        case 'memory_prefetch_started': return d.started ? `started · ${d.messageCount ?? 0} messages` : 'not started (gate/input)';
+        case 'memory_recall_resolved': return `${d.recalledCount ?? 0} memories · iteration ${d.iteration ?? '?'}`;
+        case 'session_memory_updated': return `${fmt(textLength(d.content))} chars · ${d.messageCount ?? 0} messages`;
+        case 'api_request_ready': return `${d.messages?.length ?? 0} messages · ${d.tools?.length ?? 0} tools`;
+        default: return event.stage;
+      }
+    }
+
+    function selectedRunEvents() { return state.events.filter(event => event.runId === state.runId); }
+
+    function renderRuns() {
+      const runs = [...new Set(state.events.map(event => event.runId))].reverse();
+      if (!state.runId || !runs.includes(state.runId)) state.runId = runs[0] ?? '';
+      $('runSelect').innerHTML = runs.map(run => `<option value="${esc(run)}" ${run === state.runId ? 'selected' : ''}>${esc(run)}</option>`).join('');
+    }
+
+    function renderPipeline() {
+      const events = selectedRunEvents();
+      $('pipeline').innerHTML = STAGES.map(([id, label, color]) => {
+        const matching = events.filter(event => event.stage === id);
+        const last = matching.at(-1);
+        return `<div class="stage ${matching.length ? 'active' : ''}" style="--stage-color:${color}">
+          <div class="stage-name">${esc(label)}</div>
+          <div class="stage-value">${matching.length}</div>
+          <div class="stage-last">${last ? `${time(last.timestamp)} · ${esc(summarize(last))}` : '尚未触发'}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderEvents() {
+      const events = selectedRunEvents();
+      $('eventCount').textContent = `${events.length} events`;
+      if (!events.length) {
+        $('events').innerHTML = '<div class="empty">当前 run 暂无事件</div>';
+        return;
+      }
+      $('events').innerHTML = [...events].reverse().map(event => {
+        const stage = stageMap[event.stage] ?? { label: event.stage, color: '#8fa8be' };
+        return `<button class="event ${event.id === state.selectedId ? 'selected' : ''}" data-id="${esc(event.id)}" style="--stage-color:${stage.color}">
+          <div class="event-top"><span class="event-stage">${esc(stage.label)}</span><span class="event-time">${time(event.timestamp)}</span></div>
+          <div class="event-summary">#${event.sequence} · ${esc(summarize(event))}</div>
+        </button>`;
+      }).join('');
+      document.querySelectorAll('.event').forEach(button => button.addEventListener('click', () => {
+        state.selectedId = button.dataset.id;
+        $('follow').checked = false;
+        renderEvents();
+        renderDetail();
+      }));
+    }
+
+    function metrics(event) {
+      const d = event.data || {};
+      if (event.stage === 'instructions_loaded') return [
+        ['发现文件', d.discoveredFiles?.length ?? 0], ['注入文件', d.injectedFiles?.length ?? 0], ['渲染字符', textLength(d.renderedUserContext)]
+      ];
+      if (event.stage === 'memory_recall_resolved') return [
+        ['召回记忆', d.recalledCount ?? 0], ['附件数', d.attachments?.length ?? 0], ['所在迭代', d.iteration ?? 0]
+      ];
+      if (event.stage === 'session_memory_updated') return [
+        ['摘要字符', textLength(d.content)], ['消息数', d.messageCount ?? 0], ['更新间隔 tokens', d.config?.minimumTokensBetweenUpdate ?? 0]
+      ];
+      if (event.stage === 'api_request_ready') return [
+        ['System 字符', textLength(d.system)], ['Messages', d.messages?.length ?? 0], ['Tools', d.tools?.length ?? 0]
+      ];
+      if (event.stage === 'agent_memory_loaded') return [
+        ['Prompt 字符', textLength(d.memoryPrompt)], ['Scope', d.scope ?? '-'], ['Agent', d.agentType ?? '-']
+      ];
+      return [['消息数', d.messageCount ?? 0], ['已启动', d.started ? 'yes' : 'no']];
+    }
+
+    function fileCards(files) {
+      if (!files?.length) return '<div class="empty">没有文件</div>';
+      return `<div class="files">${files.map(file => `<div class="file"><div class="file-path">${esc(file.path)}</div><div class="file-meta">${esc(file.type)}${file.globs?.length ? ` · paths: ${esc(file.globs.join(', '))}` : ''} · ${fmt(textLength(file.content))} chars</div></div>`).join('')}</div>`;
+    }
+
+    function stageDetails(event) {
+      const d = event.data || {};
+      if (event.stage === 'instructions_loaded') return `
+        <details open><summary>实际注入的 CLAUDE.md / rules</summary>${fileCards(d.injectedFiles)}</details>
+        <details><summary>发现但未注入的文件</summary>${fileCards((d.discoveredFiles || []).filter(file => !(d.injectedFiles || []).some(injected => injected.path === file.path)))}</details>
+        <details><summary>拼接后的 userContext</summary><pre>${esc(d.renderedUserContext)}</pre></details>`;
+      if (event.stage === 'memory_recall_resolved') return `
+        <details open><summary>召回附件</summary><pre>${esc(JSON.stringify(d.attachments, null, 2))}</pre></details>`;
+      if (event.stage === 'session_memory_updated') return `
+        <details open><summary>Session summary.md</summary><pre>${esc(d.content)}</pre></details>
+        <details><summary>更新配置</summary><pre>${esc(JSON.stringify(d.config, null, 2))}</pre></details>`;
+      if (event.stage === 'agent_memory_loaded') return `
+        <details open><summary>Agent Memory Prompt</summary><pre>${esc(d.memoryPrompt)}</pre></details>
+        <details><summary>目录</summary><pre>${esc(`${d.memoryDir}\n${d.entrypoint}`)}</pre></details>`;
+      if (event.stage === 'api_request_ready') return `
+        <div class="warning">这是最终 API 上下文，可能包含敏感指令、代码和用户消息。只在可信本地环境展示。</div>
+        <details open><summary>System Prompt Blocks</summary><pre>${esc(JSON.stringify(d.system, null, 2))}</pre></details>
+        <details><summary>Messages</summary><pre>${esc(JSON.stringify(d.messages, null, 2))}</pre></details>
+        <details><summary>Tool Schemas (${d.tools?.length ?? 0})</summary><pre>${esc(JSON.stringify(d.tools, null, 2))}</pre></details>`;
+      return `<details open><summary>Prefetch 输入</summary><pre>${esc(JSON.stringify(d, null, 2))}</pre></details>`;
+    }
+
+    function renderDetail() {
+      const events = selectedRunEvents();
+      const event = events.find(item => item.id === state.selectedId) ?? events.at(-1);
+      if (!event) { $('detail').innerHTML = '<div class="empty">尚未收到快照</div>'; return; }
+      state.selectedId = event.id;
+      const stage = stageMap[event.stage] ?? { label: event.stage, color: '#8fa8be' };
+      $('detail').innerHTML = `
+        <div class="hero"><div><h2 style="color:${stage.color}">${esc(stage.label)}</h2><p>${esc(event.timestamp)} · pid ${event.pid} · sequence ${event.sequence}</p></div><div class="chips"><span class="chip">${esc(event.runId)}</span><span class="chip">${esc(event.cwd)}</span></div></div>
+        <div class="metric-grid">${metrics(event).map(([label, value]) => `<div class="metric"><b>${esc(fmt(value))}</b><span>${esc(label)}</span></div>`).join('')}</div>
+        ${stageDetails(event)}
+        <details><summary>完整事件 JSON</summary><pre>${esc(JSON.stringify(event, null, 2))}</pre></details>`;
+    }
+
+    async function load() {
+      if (state.loading) return;
+      state.loading = true;
+      try {
+        const response = await fetch('/api/events', { cache: 'no-store' });
+        const payload = await response.json();
+        const oldCount = state.events.length;
+        state.events = payload.events || [];
+        $('dataDir').textContent = payload.dataDir;
+        $('status').classList.add('live');
+        $('status').querySelector('span:last-child').textContent = 'live';
+        renderRuns();
+        const current = selectedRunEvents();
+        if ($('follow').checked && (state.events.length !== oldCount || !state.selectedId)) state.selectedId = current.at(-1)?.id ?? '';
+        renderPipeline(); renderEvents(); renderDetail();
+      } catch (error) {
+        $('status').classList.remove('live');
+        $('status').querySelector('span:last-child').textContent = 'offline';
+      } finally { state.loading = false; }
+    }
+
+    $('runSelect').addEventListener('change', event => { state.runId = event.target.value; state.selectedId = ''; renderPipeline(); renderEvents(); renderDetail(); });
+    $('refresh').addEventListener('click', load);
+    setInterval(load, 800);
+    load();
+  </script>
+</body>
+</html>

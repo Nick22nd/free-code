@@ -16,6 +16,7 @@ import { execFileNoThrow } from './utils/execFileNoThrow.js'
 import { getBranch, getDefaultBranch, getIsGit, gitExe } from './utils/git.js'
 import { shouldIncludeGitInstructions } from './utils/gitSettings.js'
 import { logError } from './utils/log.js'
+import { contextInspectorCheckpoint } from './utils/contextInspector.js'
 
 const MAX_STATUS_CHARS = 2000
 
@@ -167,9 +168,37 @@ export const getUserContext = memoize(
       (isBareMode() && getAdditionalDirectoriesForClaudeMd().length === 0)
     // Await the async I/O (readFile/readdir directory walk) so the event
     // loop yields naturally at the first fs.readFile.
+    const discoveredMemoryFiles = shouldDisableClaudeMd
+      ? []
+      : await getMemoryFiles()
+    const injectedMemoryFiles = filterInjectedMemoryFiles(discoveredMemoryFiles)
     const claudeMd = shouldDisableClaudeMd
       ? null
-      : getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
+      : getClaudeMds(injectedMemoryFiles)
+
+    if (
+      contextInspectorCheckpoint('instructions_loaded', {
+        disabled: shouldDisableClaudeMd,
+        discoveredFiles: discoveredMemoryFiles.map(file => ({
+          path: file.path,
+          type: file.type,
+          parent: file.parent,
+          globs: file.globs,
+          content: file.content,
+        })),
+        injectedFiles: injectedMemoryFiles.map(file => ({
+          path: file.path,
+          type: file.type,
+          parent: file.parent,
+          globs: file.globs,
+          content: file.content,
+        })),
+        renderedUserContext: claudeMd,
+      })
+    ) {
+      // Deliberate opt-in demo breakpoint; keeps discovery locals inspectable.
+      debugger
+    }
     // Cache for the auto-mode classifier (yoloClassifier.ts reads this
     // instead of importing claudemd.ts directly, which would create a
     // cycle through permissions/filesystem → permissions → yoloClassifier).

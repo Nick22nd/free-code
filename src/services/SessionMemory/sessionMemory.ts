@@ -24,6 +24,7 @@ import {
   runForkedAgent,
 } from '../../utils/forkedAgent.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import {
   type REPLHookContext,
   registerPostSamplingHook,
@@ -42,12 +43,17 @@ import { getTokenUsage, tokenCountWithEstimation } from '../../utils/tokens.js'
 import { logEvent } from '../analytics/index.js'
 import { isAutoCompactEnabled } from '../compact/autoCompact.js'
 import {
+  contextInspectorCheckpoint,
+  isContextInspectorEnabled,
+} from '../../utils/contextInspector.js'
+import {
   buildSessionMemoryUpdatePrompt,
   loadSessionMemoryTemplate,
 } from './prompts.js'
 import {
   DEFAULT_SESSION_MEMORY_CONFIG,
   getSessionMemoryConfig,
+  getSessionMemoryContent,
   getToolCallsBetweenUpdates,
   hasMetInitializationThreshold,
   hasMetUpdateThreshold,
@@ -78,6 +84,14 @@ import {
  * Uses cached gate value - returns immediately without blocking.
  */
 function isSessionMemoryGateEnabled(): boolean {
+  if (
+    isContextInspectorEnabled() &&
+    isEnvTruthy(
+      process.env.CLAUDE_CODE_CONTEXT_INSPECTOR_FORCE_SESSION_MEMORY,
+    )
+  ) {
+    return true
+  }
   return getFeatureValue_CACHED_MAY_BE_STALE('tengu_session_memory', false)
 }
 
@@ -243,22 +257,30 @@ const initSessionMemoryConfigIfNeeded = memoize((): void => {
 
   // Only use remote values if they are explicitly set (non-zero positive numbers)
   // This ensures sensible defaults aren't overridden by zero values
+  const inspectorNumber = (name: string): number | undefined => {
+    if (!isContextInspectorEnabled()) return undefined
+    const value = Number.parseInt(process.env[name] ?? '', 10)
+    return Number.isFinite(value) && value > 0 ? value : undefined
+  }
   const config: SessionMemoryConfig = {
     minimumMessageTokensToInit:
-      remoteConfig.minimumMessageTokensToInit &&
+      inspectorNumber('CLAUDE_CODE_CONTEXT_INSPECTOR_SM_INIT_TOKENS') ??
+      (remoteConfig.minimumMessageTokensToInit &&
       remoteConfig.minimumMessageTokensToInit > 0
         ? remoteConfig.minimumMessageTokensToInit
-        : DEFAULT_SESSION_MEMORY_CONFIG.minimumMessageTokensToInit,
+        : DEFAULT_SESSION_MEMORY_CONFIG.minimumMessageTokensToInit),
     minimumTokensBetweenUpdate:
-      remoteConfig.minimumTokensBetweenUpdate &&
+      inspectorNumber('CLAUDE_CODE_CONTEXT_INSPECTOR_SM_UPDATE_TOKENS') ??
+      (remoteConfig.minimumTokensBetweenUpdate &&
       remoteConfig.minimumTokensBetweenUpdate > 0
         ? remoteConfig.minimumTokensBetweenUpdate
-        : DEFAULT_SESSION_MEMORY_CONFIG.minimumTokensBetweenUpdate,
+        : DEFAULT_SESSION_MEMORY_CONFIG.minimumTokensBetweenUpdate),
     toolCallsBetweenUpdates:
-      remoteConfig.toolCallsBetweenUpdates &&
+      inspectorNumber('CLAUDE_CODE_CONTEXT_INSPECTOR_SM_TOOL_CALLS') ??
+      (remoteConfig.toolCallsBetweenUpdates &&
       remoteConfig.toolCallsBetweenUpdates > 0
         ? remoteConfig.toolCallsBetweenUpdates
-        : DEFAULT_SESSION_MEMORY_CONFIG.toolCallsBetweenUpdates,
+        : DEFAULT_SESSION_MEMORY_CONFIG.toolCallsBetweenUpdates),
   }
   setSessionMemoryConfig(config)
 })
@@ -345,6 +367,20 @@ const extractSessionMemory = sequential(async function (
 
   // Update lastSummarizedMessageId after successful completion
   updateLastSummarizedMessageIdIfSafe(messages)
+
+  const updatedSessionMemory = await getSessionMemoryContent()
+  if (
+    contextInspectorCheckpoint('session_memory_updated', {
+      memoryPath,
+      content: updatedSessionMemory,
+      summarizedThroughMessageId: messages.at(-1)?.uuid,
+      messageCount: messages.length,
+      config,
+    })
+  ) {
+    // Deliberate opt-in demo breakpoint; keeps session-memory locals inspectable.
+    debugger
+  }
 
   markExtractionCompleted()
 })

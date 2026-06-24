@@ -250,6 +250,7 @@ import { isInProcessTeammate } from './teammateContext.js'
 import { removeTeammateFromTeamFile } from './swarm/teamHelpers.js'
 import { unassignTeammateTasks } from './tasks.js'
 import { getCompanionIntroAttachment } from '../buddy/prompt.js'
+import { contextInspectorCheckpoint } from './contextInspector.js'
 
 export const TODO_REMINDER_CONFIG = {
   TURNS_SINCE_WRITE: 10,
@@ -1795,6 +1796,7 @@ async function getNestedMemoryAttachmentsForFile(
   appState: { toolPermissionContext: ToolPermissionContext },
 ): Promise<Attachment[]> {
   const attachments: Attachment[] = []
+  const loadedMemoryFiles: MemoryFileInfo[] = []
 
   try {
     // Early return if path is not in allowed working path
@@ -1810,6 +1812,7 @@ async function getNestedMemoryAttachmentsForFile(
       filePath,
       processedPaths,
     )
+    loadedMemoryFiles.push(...managedUserRules)
     attachments.push(
       ...memoryFilesToAttachments(managedUserRules, toolUseContext, filePath),
     )
@@ -1833,6 +1836,7 @@ async function getNestedMemoryAttachmentsForFile(
       ).filter(
         f => !skipProjectLevel || (f.type !== 'Project' && f.type !== 'Local'),
       )
+      loadedMemoryFiles.push(...memoryFiles)
       attachments.push(
         ...memoryFilesToAttachments(memoryFiles, toolUseContext, filePath),
       )
@@ -1850,12 +1854,27 @@ async function getNestedMemoryAttachmentsForFile(
       ).filter(
         f => !skipProjectLevel || (f.type !== 'Project' && f.type !== 'Local'),
       )
+      loadedMemoryFiles.push(...conditionalRules)
       attachments.push(
         ...memoryFilesToAttachments(conditionalRules, toolUseContext, filePath),
       )
     }
   } catch (error) {
     logError(error)
+  }
+
+  if (
+    loadedMemoryFiles.length > 0 &&
+    contextInspectorCheckpoint('instructions_loaded', {
+      reason: 'path_matched',
+      targetPath: filePath,
+      discoveredFiles: loadedMemoryFiles,
+      injectedFiles: loadedMemoryFiles,
+      attachments,
+    })
+  ) {
+    // Deliberate opt-in demo breakpoint; keeps matched rule locals inspectable.
+    debugger
   }
 
   return attachments
