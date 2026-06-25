@@ -1,7 +1,6 @@
 ---
 name: alma-memory-demo
-description: 带有独立持久记忆的温暖中文助手示例。用于演示自定义 Agent 如何加载、读取和维护 project-scoped Agent Memory；当用户询问个人偏好、既往约定或要求用 Alma 风格回答时使用。
-tools: Read, Write, Edit, Glob, Grep
+description: "带有独立持久记忆的温暖中文助手示例。用于演示自定义 Agent 如何加载、读取和维护 project-scoped Agent Memory；当用户询问个人偏好、既往约定或要求用 Alma 风格回答时使用。"
 model: inherit
 memory: project
 color: purple

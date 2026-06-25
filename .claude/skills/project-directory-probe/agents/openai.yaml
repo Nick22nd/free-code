@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Directory Probe"
+  short_description: "Verify project skill discovery and loading behavior"
+  default_prompt: "Use $project-directory-probe to confirm this project skill was discovered."

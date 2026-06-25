@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { getOriginalCwd } from '../../bootstrap/state.js';
 import { AgentsMenu } from '../../components/agents/AgentsMenu.js';
 import type { ToolUseContext } from '../../Tool.js';
 import { getTools } from '../../tools.js';
@@ -9,12 +8,13 @@ import {
   getAgentDefinitionsWithOverrides,
 } from '../../tools/AgentTool/loadAgentsDir.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
+import { getCwd } from '../../utils/cwd.js';
 export async function call(onDone: LocalJSXCommandOnDone, context: ToolUseContext): Promise<React.ReactNode> {
   // Re-scan definitions when the management UI opens. The startup snapshot
   // may be stale when files were created externally or a plugin refresh
   // replaced AppState after initial discovery.
   clearAgentDefinitionsCache();
-  const freshDefinitions = await getAgentDefinitionsWithOverrides(getOriginalCwd());
+  const freshDefinitions = await getAgentDefinitionsWithOverrides(getCwd());
   context.setAppState(state => ({
     ...state,
     agentDefinitions: {
