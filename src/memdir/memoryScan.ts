@@ -9,6 +9,10 @@ import { basename, join } from 'path'
 import { parseFrontmatter } from '../utils/frontmatterParser.js'
 import { readFileInRange } from '../utils/readFileInRange.js'
 import { type MemoryType, parseMemoryType } from './memoryTypes.js'
+import {
+  getSensitiveMemoryAction,
+  sanitizeMemoryText,
+} from './sensitiveMemory.js'
 
 export type MemoryHeader = {
   filename: string
@@ -53,11 +57,20 @@ export async function scanMemoryFiles(
           signal,
         )
         const { frontmatter } = parseFrontmatter(content, filePath)
+        const sanitizedDescription = frontmatter.description
+          ? sanitizeMemoryText(frontmatter.description)
+          : null
+        if (
+          sanitizedDescription?.matched &&
+          getSensitiveMemoryAction() === 'exclude'
+        ) {
+          throw new Error('sensitive memory excluded')
+        }
         return {
           filename: relativePath,
           filePath,
           mtimeMs,
-          description: frontmatter.description || null,
+          description: sanitizedDescription?.text || null,
           type: parseMemoryType(frontmatter.type),
         }
       }),

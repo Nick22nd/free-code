@@ -22,6 +22,7 @@ import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../../tools/GrepTool/prompt.js'
+import { sensitiveMemoryPromptGuidance } from '../../memdir/sensitiveMemory.js'
 
 /**
  * Shared opener for both extract-prompt variants.
@@ -40,6 +41,8 @@ function opener(newMessageCount: number, existingMemories: string): string {
     '',
     `You MUST only use content from the last ~${newMessageCount} messages to update your persistent memories. Do not waste any turns attempting to investigate or verify that content further — no grepping source files, no reading code to confirm a pattern exists, no git commands.` +
       manifest,
+    '',
+    sensitiveMemoryPromptGuidance(),
   ].join('\n')
 }
 

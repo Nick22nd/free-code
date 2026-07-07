@@ -17,6 +17,10 @@ import {
   type Output as FileReadToolOutput,
 } from '../../tools/FileReadTool/FileReadTool.js'
 import type { Message } from '../../types/message.js'
+import {
+  applySensitiveMemoryPolicyToToolInput,
+  getSensitiveMemoryAction,
+} from '../../memdir/sensitiveMemory.js'
 import { count } from '../../utils/array.js'
 import {
   createCacheSafeParams,
@@ -503,7 +507,20 @@ export function createMemoryFileCanUseTool(memoryPath: string): CanUseToolFn {
     ) {
       const filePath = input.file_path
       if (typeof filePath === 'string' && filePath === memoryPath) {
-        return { behavior: 'allow' as const, updatedInput: input }
+        const filtered = applySensitiveMemoryPolicyToToolInput(
+          input as Record<string, unknown>,
+        )
+        if (filtered.matched && getSensitiveMemoryAction() === 'exclude') {
+          return {
+            behavior: 'deny' as const,
+            message: 'Session-memory update rejected by sensitive-memory policy',
+            decisionReason: {
+              type: 'other' as const,
+              reason: 'sensitive-memory policy',
+            },
+          }
+        }
+        return { behavior: 'allow' as const, updatedInput: filtered.input }
       }
     }
     return {

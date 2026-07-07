@@ -188,6 +188,7 @@ export const WHAT_NOT_TO_SAVE_SECTION: readonly string[] = [
   '- Debugging solutions or fix recipes — the fix is in the code; the commit message has the context.',
   '- Anything already documented in CLAUDE.md files.',
   '- Ephemeral task details: in-progress work, temporary state, current conversation context.',
+  '- Credentials, private keys, access tokens, passwords, or user-designated sensitive terms. Replace a sensitive value with `[REDACTED]`; if the remaining fact is not useful, do not save it.',
   '',
   // H2: explicit-save gate. Eval-validated (memory-prompt-iteration case 3,
   // 0/2 → 3/3): prevents "save this week's PR list" → activity-log noise.

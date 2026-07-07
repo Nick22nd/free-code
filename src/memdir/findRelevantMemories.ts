@@ -9,6 +9,7 @@ import {
   type MemoryHeader,
   scanMemoryFiles,
 } from './memoryScan.js'
+import { sanitizeMemoryText } from './sensitiveMemory.js'
 
 export type RelevantMemory = {
   path: string
@@ -51,7 +52,7 @@ export async function findRelevantMemories(
   }
 
   const selectedFilenames = await selectRelevantMemories(
-    query,
+    sanitizeMemoryText(query).text,
     memories,
     signal,
     recentTools,

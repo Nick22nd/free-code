@@ -6,6 +6,7 @@
 import { isFsInaccessible } from '../../utils/errors.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { getSessionMemoryPath } from '../../utils/permissions/filesystem.js'
+import { sanitizeMemoryText } from '../../memdir/sensitiveMemory.js'
 import { sleep } from '../../utils/sleep.js'
 import { logEvent } from '../analytics/index.js'
 
@@ -112,7 +113,8 @@ export async function getSessionMemoryContent(): Promise<string | null> {
   const memoryPath = getSessionMemoryPath()
 
   try {
-    const content = await fs.readFile(memoryPath, { encoding: 'utf-8' })
+    const rawContent = await fs.readFile(memoryPath, { encoding: 'utf-8' })
+    const content = sanitizeMemoryText(rawContent).text
 
     logEvent('tengu_session_memory_loaded', {
       content_length: content.length,

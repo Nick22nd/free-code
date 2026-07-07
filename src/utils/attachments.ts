@@ -16,6 +16,7 @@ import {
   readImageWithTokenBudget,
 } from '../tools/FileReadTool/FileReadTool.js'
 import { FileTooLargeError, readFileInRange } from './readFileInRange.js'
+import { sanitizeMemoryText } from '../memdir/sensitiveMemory.js'
 import { expandPath } from './path.js'
 import { countCharInString } from './stringUtils.js'
 import { count, uniq } from './array.js'
@@ -2321,10 +2322,11 @@ export async function readMemoriesForSurfacing(
         )
         const truncated =
           result.totalLines > MAX_MEMORY_LINES || result.truncatedByBytes
-        const content = truncated
+        const rawContent = truncated
           ? result.content +
             `\n\n> This memory file was truncated (${result.truncatedByBytes ? `${MAX_MEMORY_BYTES} byte limit` : `first ${MAX_MEMORY_LINES} lines`}). Use the ${FILE_READ_TOOL_NAME} tool to view the complete file at: ${filePath}`
           : result.content
+        const { text: content } = sanitizeMemoryText(rawContent)
         return {
           path: filePath,
           content,

@@ -28,6 +28,10 @@ import {
   isAutoMemPath,
 } from '../../memdir/paths.js'
 import type { Tool } from '../../Tool.js'
+import {
+  applySensitiveMemoryPolicyToToolInput,
+  getSensitiveMemoryAction,
+} from '../../memdir/sensitiveMemory.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
@@ -210,7 +214,14 @@ export function createAutoMemCanUseTool(memoryDir: string): CanUseToolFn {
     ) {
       const filePath = input.file_path
       if (typeof filePath === 'string' && isAutoMemPath(filePath)) {
-        return { behavior: 'allow' as const, updatedInput: input }
+        const filtered = applySensitiveMemoryPolicyToToolInput(input)
+        if (filtered.matched && getSensitiveMemoryAction() === 'exclude') {
+          return denyAutoMemTool(
+            tool,
+            'Memory write rejected by the sensitive-memory policy',
+          )
+        }
+        return { behavior: 'allow' as const, updatedInput: filtered.input }
       }
     }
 
